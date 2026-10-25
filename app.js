@@ -743,7 +743,9 @@ if (typeof module !== 'undefined' && module.exports) {
   });
   function importText(text) {
     try {
-      S = sanitize(JSON.parse(text));
+      var parsed = JSON.parse(text);
+      if (parsed && (parsed.history || parsed.entry)) { importHistoryObj(parsed); return; }   // a history file
+      S = sanitize(parsed);
       sel = null; brush = null; save(); invalidateResult(); renderSetup();
       toast('Setup imported.');
     } catch (err) { toast('Import failed: ' + err.message); }
@@ -765,30 +767,56 @@ if (typeof module !== 'undefined' && module.exports) {
   });
 
   /* ================================================================
-     History: every Start press is logged, with its result when known
+     History: every Start press (and every "Save level") is logged.
+     Entries can be named, exported as JSON, shared and imported again,
+     so friends can open the same levels.
      ================================================================ */
-  var HIST_KEY = 'water-sort-solver-history-v1', HIST_MAX = 50;
+  var HIST_KEY = 'water-sort-solver-history-v1', HIST_MAX = 200;
   var H = [], curHist = null;
+  var STATUS_TEXT = { saved: 'Saved level', solving: 'Solving…', solved: 'Solved', unsolvable: 'No solution',
+                      limit: 'Search too large', cancelled: 'Cancelled', interrupted: 'Interrupted', error: 'Check failed' };
 
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  /* Validate + normalise one history entry (from storage or from a friend's file). */
+  function cleanEntry(e) {
+    if (!e || typeof e !== 'object' || !STATUS_TEXT[e.status]) return null;
+    var setup;
+    try { setup = sanitize(e.setup); } catch (x) { return null; }
+    var t = new Date(e.time);
+    if (isNaN(t.getTime())) return null;
+    var moves = null;
+    if (Array.isArray(e.moves)) {
+      moves = e.moves.slice(0, 1000).map(function (m) {
+        m = m || {};
+        return { step: +m.step || 0, from: +m.from || 0, to: +m.to || 0, layers: +m.layers || 0, color: String(m.color || '').slice(0, 14) };
+      });
+    }
+    return {
+      id: String(e.id || '').slice(0, 40) || newId(),
+      time: t.toISOString(),
+      status: e.status === 'solving' ? 'interrupted' : e.status,   // a search cannot survive a closed page
+      name: String(e.name || '').slice(0, 40),
+      extraTubes: clampInt(e.extraTubes, 0, 5, 0),
+      setup: { tubeCount: setup.tubeCount, cap: setup.cap, palette: setup.palette, tubes: setup.tubes },
+      moveCount: Number.isInteger(e.moveCount) ? e.moveCount : null,
+      moves: moves,
+      seconds: typeof e.seconds === 'number' ? e.seconds : null,
+      statesChecked: typeof e.statesChecked === 'number' ? e.statesChecked : null
+    };
+  }
   function loadHistory() {
     try {
       var a = JSON.parse(localStorage.getItem(HIST_KEY));
-      if (!Array.isArray(a)) return [];
-      return a.filter(function (e) { return e && e.id && e.setup && e.status; }).map(function (e) {
-        if (e.status === 'solving') e.status = 'interrupted';   // page was closed mid-search
-        return e;
-      }).slice(0, HIST_MAX);
+      return Array.isArray(a) ? a.map(cleanEntry).filter(Boolean).slice(0, HIST_MAX) : [];
     } catch (e) { return []; }
   }
   function saveHistory() {
     try { localStorage.setItem(HIST_KEY, JSON.stringify(H)); } catch (e) { /* storage may be blocked */ }
   }
-  function addHistory(extra) {
+  function addHistory(extra, status, name) {
     var e = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      time: new Date().toISOString(),
-      status: 'solving',
-      extraTubes: extra,
+      id: newId(), time: new Date().toISOString(), status: status || 'solving', name: name || '', extraTubes: extra || 0,
       // Same shape as an exported setup, so it can be imported back as-is.
       setup: { tubeCount: S.tubeCount, cap: S.cap, palette: JSON.parse(JSON.stringify(S.palette)), tubes: JSON.parse(JSON.stringify(S.tubes)) },
       moveCount: null, moves: null, seconds: null, statesChecked: null
@@ -811,27 +839,46 @@ if (typeof module !== 'undefined' && module.exports) {
       return { step: i + 1, from: m.from + 1, to: m.to + 1, layers: m.count, color: names[m.colorId] || String(m.colorId) };
     });
   }
-  var STATUS_TEXT = { solving: 'Solving…', solved: 'Solved', unsolvable: 'No solution', limit: 'Search too large',
-                      cancelled: 'Cancelled', interrupted: 'Interrupted', error: 'Check failed' };
+
+  /* Tiny picture of the saved board, so levels can be recognised at a glance. */
+  function miniHTML(setup) {
+    var pal = {};
+    setup.palette.forEach(function (c) { pal[c.id] = c.hex; });
+    return '<div class="mini">' + setup.tubes.map(function (tb) {
+      var cells = '';
+      for (var l = setup.cap - 1; l >= 0; l--) {
+        var hex = tb[l] !== null && pal[tb[l]] ? pal[tb[l]] : null;
+        cells += '<i' + (hex ? ' style="background:' + hex + '"' : '') + '></i>';
+      }
+      return '<b>' + cells + '</b>';
+    }).join('') + '</div>';
+  }
+
   function renderHistory() {
     var box = $('historyList');
-    if (!H.length) { box.innerHTML = '<p class="tip">Nothing yet. Each time you press Start, the board is logged here.</p>'; }
-    else {
+    if (!H.length) {
+      box.innerHTML = '<p class="tip">Nothing yet. Press Start or "Save level" and the board is logged here. Export the file to share your levels with friends.</p>';
+    } else {
       box.innerHTML = H.map(function (e) {
         var label = STATUS_TEXT[e.status] || e.status;
         if (e.status === 'solved') label += ' in ' + e.moveCount + ' move' + (e.moveCount === 1 ? '' : 's');
         var extra = e.extraTubes ? ' + ' + e.extraTubes + ' extra tube' + (e.extraTubes === 1 ? '' : 's') : '';
         return '<div class="hrow ' + esc(e.status) + '" data-id="' + esc(e.id) + '">' +
-          '<div class="hinfo"><div class="hstatus">' + esc(label) + '</div>' +
-          '<div class="hmeta">' + esc(new Date(e.time).toLocaleString()) + '<br>' + e.setup.tubeCount + ' tubes' + extra + ', ' + e.setup.cap + ' layers</div></div>' +
+          '<div class="hinfo">' + (e.name ? '<div class="hname">' + esc(e.name) + '</div>' : '') +
+          '<div class="hstatus">' + esc(label) + '</div>' +
+          '<div class="hmeta">' + esc(new Date(e.time).toLocaleString()) + '. ' + e.setup.tubeCount + ' tubes' + extra + ', ' + e.setup.cap + ' layers</div></div>' +
+          miniHTML(e.setup) +
           '<div class="hbtns"><button type="button" class="btn sm" data-act="load">Load</button>' +
+          '<button type="button" class="btn sm" data-act="name">Name</button>' +
           '<button type="button" class="btn sm" data-act="export">Export</button>' +
           '<button type="button" class="btn sm danger" data-act="del" aria-label="Delete entry">×</button></div></div>';
       }).join('');
     }
     $('histExportAll').disabled = !H.length;
+    $('histShare').disabled = !H.length;
     $('histClear').disabled = !H.length;
   }
+
   function downloadJSON(filename, obj) {
     var json = JSON.stringify(obj, null, 1);
     try {
@@ -843,6 +890,27 @@ if (typeof module !== 'undefined' && module.exports) {
     } catch (err) { toast('Download is not available in this browser.'); }
   }
   function stamp(e) { return e.time.slice(0, 19).replace(/[:T]/g, '-'); }
+  function historyFile() {
+    return { app: 'water-sort-solver', version: 1, exportedAt: new Date().toISOString(), history: H };
+  }
+
+  /* Merge entries from a friend's file (or an old export). Duplicates (same id) are skipped. */
+  function importHistoryObj(o) {
+    var list = Array.isArray(o.history) ? o.history : (o.entry ? [o.entry] : []);
+    var have = {};
+    H.forEach(function (e) { have[e.id] = true; });
+    var added = 0, skipped = 0, bad = 0;
+    list.forEach(function (raw) {
+      var e = cleanEntry(raw);
+      if (!e) { bad++; return; }
+      if (have[e.id]) { skipped++; return; }
+      have[e.id] = true; H.push(e); added++;
+    });
+    H.sort(function (a, b) { return a.time < b.time ? 1 : (a.time > b.time ? -1 : 0); });
+    if (H.length > HIST_MAX) H.length = HIST_MAX;
+    saveHistory(); renderHistory();
+    toast('Imported ' + added + ' level' + (added === 1 ? '' : 's') + (skipped ? ', ' + skipped + ' already here' : '') + (bad ? ', ' + bad + ' skipped as invalid' : '') + '.');
+  }
 
   $('historyList').addEventListener('click', function (e) {
     var b = e.target.closest('[data-act]');
@@ -856,6 +924,9 @@ if (typeof module !== 'undefined' && module.exports) {
     } else if (act === 'del') {
       H = H.filter(function (x) { return x.id !== id; });
       saveHistory(); renderHistory();
+    } else if (act === 'name') {
+      var nm = prompt('Name this level', entry.name || '');
+      if (nm !== null) updateHistory(id, { name: nm.trim().slice(0, 40) });
     } else if (act === 'load') {
       if (boardHasLayers() && !confirm('Replace the current board with this entry?')) return;
       try {
@@ -868,8 +939,40 @@ if (typeof module !== 'undefined' && module.exports) {
       } catch (err) { toast('Could not load this entry.'); }
     }
   });
-  $('histExportAll').addEventListener('click', function () {
-    downloadJSON('water-sort-history.json', { app: 'water-sort-solver', version: 1, exportedAt: new Date().toISOString(), history: H });
+
+  $('saveLevel').addEventListener('click', function () {
+    if (!boardHasLayers()) return toast('Paint some layers first.');
+    var nm = prompt('Name for this level (optional)', '');
+    if (nm === null) return;
+    addHistory(0, 'saved', nm.trim().slice(0, 40));
+    toast('Level saved to history.');
+  });
+  $('histExportAll').addEventListener('click', function () { downloadJSON('water-sort-history.json', historyFile()); });
+  $('histShare').addEventListener('click', function () {
+    var json = JSON.stringify(historyFile(), null, 1);
+    try {
+      var f = new File([json], 'water-sort-history.json', { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) {
+        navigator.share({ files: [f], title: 'Water Sort levels' }).catch(function () { /* user closed the share sheet */ });
+        return;
+      }
+    } catch (err) { /* fall through to download */ }
+    downloadJSON('water-sort-history.json', historyFile());
+    toast('Sharing is not supported here. The file was downloaded instead.');
+  });
+  $('histImport').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var o = JSON.parse(String(r.result));
+        if (!o || (!o.history && !o.entry)) throw new Error('This is not a history file');
+        importHistoryObj(o);
+      } catch (err) { toast('Import failed: ' + err.message); }
+    };
+    r.readAsText(f);
+    this.value = '';
   });
   $('histClear').addEventListener('click', function () {
     if (!confirm('Delete the whole history?')) return;
@@ -1124,6 +1227,7 @@ if (typeof module !== 'undefined' && module.exports) {
   S = loadSaved();
   if (!S) { S = stateFromExample(EXAMPLES[0]); firstRun = true; save(); }
   H = loadHistory();
+  if (!navigator.share) $('histShare').hidden = true;
   renderSetup();
   renderHistory();
   if (firstRun) toast('Level 27 is loaded as a demo. Press Start, or clear it and enter your own board.');

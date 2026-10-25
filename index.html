@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#10131a">
 <title>Water Sort Solver</title>
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -133,9 +133,13 @@
     <h2 id="h-hist">History</h2>
     <div id="historyList"></div>
     <div class="toolbar">
+      <button type="button" class="btn" id="saveLevel">Save level</button>
       <button type="button" class="btn" id="histExportAll">Export all (JSON)</button>
+      <button type="button" class="btn" id="histShare">Share</button>
+      <label class="btn filebtn">Import history<input type="file" id="histImport" accept="application/json,.json" hidden></label>
       <button type="button" class="btn danger" id="histClear">Clear history</button>
     </div>
+    <p class="tip">Send the exported file to a friend. They press "Import history" and see your levels, solved or saved, and can load any of them.</p>
   </section>
 
   <!-- 5. BACKUP -->
@@ -160,6 +164,6 @@
 </div>
 <div id="toast" class="toast" role="status"></div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

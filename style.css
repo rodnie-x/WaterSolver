@@ -169,15 +169,20 @@ input[type=range] { width: 100%; min-height: var(--tap); accent-color: var(--acc
 .mv.cur { background: var(--accent); color: var(--on-accent); }
 
 /* ---------- history ---------- */
-.hrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.hrow { padding: 12px 0; border-top: 1px solid var(--line); }
 .hrow:first-child { border-top: 0; }
-.hstatus { font-weight: 800; }
+.hname { font-weight: 800; font-size: 1.05rem; }
+.hstatus { font-weight: 700; font-size: .92rem; }
 .hrow.solved .hstatus { color: var(--ok); }
 .hrow.unsolvable .hstatus, .hrow.limit .hstatus, .hrow.error .hstatus { color: var(--warn); }
 .hrow.solving .hstatus { color: var(--accent); }
+.hrow.saved .hstatus { color: var(--accent); }
 .hrow.cancelled .hstatus, .hrow.interrupted .hstatus { color: var(--muted); }
 .hmeta { color: var(--muted); font-size: .82rem; line-height: 1.35; }
-.hbtns { display: flex; gap: 6px; flex: none; }
+.mini { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
+.mini b { display: flex; flex-direction: column; gap: 1px; padding: 2px; border: 1px solid #4a5370; border-radius: 3px 3px 7px 7px; width: 16px; }
+.mini i { display: block; height: 8px; border-radius: 2px; background: rgba(255,255,255,.05); }
+.hbtns { display: flex; flex-wrap: wrap; gap: 6px; }
 .btn.sm { min-height: 40px; padding: 0 12px; font-size: .9rem; }
 
 /* ---------- misc ---------- */
