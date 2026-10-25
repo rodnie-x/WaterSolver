@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#10131a">
+<title>Water Sort Solver</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>Water Sort Solver</h1>
+  <p>Copy your board, press Start, then follow the moves. Works offline. Nothing leaves your device.</p>
+</header>
+
+<main>
+
+  <section id="selftest" class="sec" hidden></section>
+
+  <!-- 1. SETUP -->
+  <section class="sec" aria-labelledby="h-setup">
+    <h2 id="h-setup">Setup</h2>
+    <div class="fields">
+      <div class="field">
+        <label for="tubeCount">Tubes</label>
+        <div class="stepper">
+          <button type="button" data-step="tubeCount" data-d="-1" aria-label="Fewer tubes">−</button>
+          <input id="tubeCount" type="number" inputmode="numeric" min="2" max="20">
+          <button type="button" data-step="tubeCount" data-d="1" aria-label="More tubes">+</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="cap">Layers per tube</label>
+        <div class="stepper">
+          <button type="button" data-step="cap" data-d="-1" aria-label="Fewer layers">−</button>
+          <input id="cap" type="number" inputmode="numeric" min="2" max="8">
+          <button type="button" data-step="cap" data-d="1" aria-label="More layers">+</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="perRow">Tubes per row</label>
+        <select id="perRow">
+          <option value="0">Auto</option>
+          <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option><option value="7">7</option>
+          <option value="8">8</option><option value="9">9</option><option value="10">10</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="example">Load example</label>
+        <select id="example">
+          <option value="">Choose a level…</option>
+          <option value="27">Level 27 (26 moves)</option>
+          <option value="28">Level 28 (22 moves)</option>
+          <option value="29">Level 29 (24 moves)</option>
+        </select>
+      </div>
+    </div>
+    <label class="switch"><input type="checkbox" id="cb"><span class="track"></span><span>Colorblind letters on every layer</span></label>
+  </section>
+
+  <!-- 2. PALETTE -->
+  <section class="sec" aria-labelledby="h-pal">
+    <h2 id="h-pal">Palette</h2>
+    <details id="editor">
+      <summary id="editorSummary">Palette</summary>
+      <p class="tip">Match each color to your game. Rename it, pick the exact shade, or add more colors.</p>
+      <div id="editorRows"></div>
+      <button type="button" class="btn" id="addColor">Add color</button>
+    </details>
+  </section>
+
+  <!-- 3. BOARD -->
+  <section class="sec" aria-labelledby="h-board">
+    <h2 id="h-board">Board</h2>
+    <div class="brushbar">
+      <div id="chips" class="chips" role="group" aria-label="Colors"></div>
+    </div>
+    <p id="hint" class="hint" aria-live="polite"></p>
+    <div class="toolbar">
+      <button type="button" class="btn" id="fastBtn" aria-pressed="false">Fill by tapping</button>
+      <button type="button" class="btn" id="clearTube" disabled>Clear tube</button>
+      <button type="button" class="btn danger" id="clearAll">Clear all</button>
+    </div>
+    <div id="board" class="tubes" aria-label="Board"></div>
+    <div id="validation" class="valid" aria-live="polite"></div>
+  </section>
+
+  <!-- 4. PROBLEM / SOLVING / RESULT -->
+  <section id="solving" class="sec solving" hidden aria-live="polite">
+    <div class="spin" aria-hidden="true"></div>
+    <div>
+      <strong>Solving…</strong>
+      <div id="progress" class="tip"></div>
+    </div>
+    <button type="button" class="btn" id="cancelBtn">Cancel</button>
+  </section>
+
+  <section id="problem" class="sec problem" hidden></section>
+
+  <section id="result" class="sec" hidden aria-labelledby="h-res">
+    <h2 id="h-res">Solution</h2>
+    <p id="summary" class="summary"></p>
+    <div id="stepText" class="steptext" aria-live="polite"></div>
+    <div id="playBoard" class="tubes play"></div>
+    <div class="controls">
+      <button type="button" class="btn" id="restartBtn">Restart</button>
+      <button type="button" class="btn" id="prevBtn">Prev</button>
+      <button type="button" class="btn primary" id="playBtn" aria-pressed="false">Play</button>
+      <button type="button" class="btn" id="nextBtn">Next</button>
+    </div>
+    <div class="fields tight">
+      <div class="field">
+        <label for="speed">Speed</label>
+        <input id="speed" type="range" min="1" max="10" value="6">
+      </div>
+      <div class="field">
+        <label for="jump">Jump to step</label>
+        <div class="jumprow">
+          <input id="jump" type="number" inputmode="numeric" min="1" value="1">
+          <button type="button" class="btn" id="jumpBtn">Go</button>
+        </div>
+      </div>
+    </div>
+    <h3>All moves</h3>
+    <div id="moveList" class="moves" aria-label="Move list"></div>
+  </section>
+
+  <!-- 5. BACKUP -->
+  <section class="sec">
+    <details>
+      <summary>Save, share and reset</summary>
+      <p class="tip">Your setup is saved in this browser automatically. Export it as JSON to move it to another device.</p>
+      <textarea id="backupText" rows="4" spellcheck="false" aria-label="Setup JSON" placeholder="Exported JSON appears here. Paste JSON here to import."></textarea>
+      <div class="toolbar">
+        <button type="button" class="btn" id="exportBtn">Export</button>
+        <button type="button" class="btn" id="importTextBtn">Import pasted JSON</button>
+        <label class="btn filebtn">Import file<input type="file" id="importFile" accept="application/json,.json" hidden></label>
+        <button type="button" class="btn danger" id="resetBtn">Reset</button>
+      </div>
+    </details>
+  </section>
+
+</main>
+
+<div class="startbar">
+  <button type="button" class="btn primary big" id="startBtn">Start</button>
+</div>
+<div id="toast" class="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
