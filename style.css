@@ -106,7 +106,7 @@ details[open] > summary { margin-bottom: 4px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
 
 /* ---------- tubes ---------- */
-.tubes { display: grid; gap: 14px 6px; justify-items: center; --sh: 34px; padding: 6px 0; }
+.tubes { margin: 0 auto; width: 100%; display: grid; gap: 14px 6px; justify-items: center; --sh: 34px; padding: 6px 0; }
 .tw { width: 100%; max-width: 58px; display: flex; flex-direction: column; align-items: center; border-radius: 12px; padding: 3px 0; }
 .tube {
   width: 100%; display: flex; flex-direction: column; padding: 3px 3px 5px;
@@ -163,10 +163,22 @@ details[open] > summary { margin-bottom: 4px; }
 .fields.tight { margin-bottom: 0; }
 .jumprow { display: grid; grid-template-columns: 1fr 70px; gap: 8px; }
 input[type=range] { width: 100%; min-height: var(--tap); accent-color: var(--accent); background: none; border: 0; padding: 0; }
-.moves { max-height: 11rem; overflow-y: auto; position: relative; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px; }
-.mv { min-height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font: inherit; font-size: .88rem; cursor: pointer; font-variant-numeric: tabular-nums; }
-.mv.past { color: var(--muted); }
-.mv.cur { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 700; }
+.moves { max-height: 11rem; overflow-y: auto; position: relative; display: flex; flex-wrap: wrap; gap: 4px 2px; padding: 2px; }
+.mv { min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; font-weight: 800; font-size: 1.05rem; cursor: pointer; font-variant-numeric: tabular-nums; }
+.mv.past { color: var(--muted); font-weight: 600; }
+.mv.cur { background: var(--accent); color: var(--on-accent); }
+
+/* ---------- history ---------- */
+.hrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.hrow:first-child { border-top: 0; }
+.hstatus { font-weight: 800; }
+.hrow.solved .hstatus { color: var(--ok); }
+.hrow.unsolvable .hstatus, .hrow.limit .hstatus, .hrow.error .hstatus { color: var(--warn); }
+.hrow.solving .hstatus { color: var(--accent); }
+.hrow.cancelled .hstatus, .hrow.interrupted .hstatus { color: var(--muted); }
+.hmeta { color: var(--muted); font-size: .82rem; line-height: 1.35; }
+.hbtns { display: flex; gap: 6px; flex: none; }
+.btn.sm { min-height: 40px; padding: 0 12px; font-size: .9rem; }
 
 /* ---------- misc ---------- */
 .startbar {
@@ -194,3 +206,7 @@ input[type=range] { width: 100%; min-height: var(--tap); accent-color: var(--acc
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
   .spin { animation-duration: 1.6s !important; animation-iteration-count: infinite !important; }
 }
+
+/* Active tube in the setup board: the tube you are filling right now */
+.tw.active .tube { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,207,92,.35); background: rgba(255,207,92,.07); }
+.tw.active .num { background: var(--accent); color: var(--on-accent); }

@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#10131a">
 <title>Water Sort Solver</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 
@@ -42,7 +42,7 @@
       <div class="field">
         <label for="perRow">Tubes per row</label>
         <select id="perRow">
-          <option value="0">Auto</option>
+          <option value="0">Auto (2 rows)</option>
           <option value="2">2</option><option value="3">3</option><option value="4">4</option>
           <option value="5">5</option><option value="6">6</option><option value="7">7</option>
           <option value="8">8</option><option value="9">9</option><option value="10">10</option>
@@ -128,6 +128,16 @@
     <div id="moveList" class="moves" aria-label="Move list"></div>
   </section>
 
+  <!-- HISTORY -->
+  <section class="sec" aria-labelledby="h-hist">
+    <h2 id="h-hist">History</h2>
+    <div id="historyList"></div>
+    <div class="toolbar">
+      <button type="button" class="btn" id="histExportAll">Export all (JSON)</button>
+      <button type="button" class="btn danger" id="histClear">Clear history</button>
+    </div>
+  </section>
+
   <!-- 5. BACKUP -->
   <section class="sec">
     <details>
@@ -150,6 +160,6 @@
 </div>
 <div id="toast" class="toast" role="status"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

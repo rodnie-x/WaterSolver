@@ -452,6 +452,7 @@ if (typeof module !== 'undefined' && module.exports) {
       var arr = tubes[t], cls = 'tw';
       if (o.from === t) cls += ' from';
       if (o.to === t) cls += ' to';
+      if (o.sel && o.sel.t === t) cls += ' active';
       var slots = '';
       for (var l = cap - 1; l >= 0; l--) {
         var id = arr[l], c = 'slot', style = '', sym = '';
@@ -471,22 +472,26 @@ if (typeof module !== 'undefined' && module.exports) {
     }
     return h;
   }
-  function layoutGrid(el, cap) {
+  /* Layout: "Auto" splits the tubes into two rows, the top row getting the
+     extra tube when the count is odd (10 -> 5+5, 9 -> 5+4, 8 -> 4+4).
+     A fixed "Tubes per row" value overrides this. */
+  function layoutGrid(el, cap, count) {
+    var cols = S.perRow > 0 ? S.perRow : Math.ceil(count / 2);
     el.style.setProperty('--sh', (cap <= 4 ? 34 : cap <= 6 ? 28 : 23) + 'px');
-    el.style.gridTemplateColumns = S.perRow > 0
-      ? 'repeat(' + S.perRow + ', minmax(0, 1fr))'
-      : 'repeat(auto-fill, minmax(48px, 1fr))';
+    el.style.gridTemplateColumns = 'repeat(' + Math.max(1, cols) + ', minmax(0, 1fr))';
+    // Keep tubes close together on wide screens (laptops); full width on phones.
+    el.style.maxWidth = Math.max(1, cols) * 76 + 'px';
   }
 
   function renderBoard() {
     var el = $('board');
-    layoutGrid(el, S.cap);
+    layoutGrid(el, S.cap, S.tubeCount);
     el.innerHTML = tubesHTML(S.tubes, S.cap, { sel: sel });
     $('clearTube').disabled = !sel;
     $('fastBtn').setAttribute('aria-pressed', fast ? 'true' : 'false');
     $('hint').textContent = fast
       ? 'Pick a color, then tap slots to paint them. Tap a painted slot of the same color to erase it.'
-      : (sel ? 'Slot selected in tube ' + (sel.t + 1) + '. Tap a color below to paint it.'
+      : (sel ? 'Slot selected in tube ' + (sel.t + 1) + '. Tap a color: it fills bottom to top, then moves to the next tube.'
              : 'Tap a slot (or a tube number), then tap a color.');
   }
 
@@ -651,8 +656,15 @@ if (typeof module !== 'undefined' && module.exports) {
     if (!sel) return toast('Tap a tube slot first, then a color.');
     var t = sel.t, l = sel.l;
     S.tubes[t][l] = id === 'erase' ? null : id;
-    sel = (l + 1 < S.cap) ? { t: t, l: l + 1 } : null;   // advance upward
+    // Auto-advance: up the tube, then to the bottom of the next tube.
+    if (l + 1 < S.cap) sel = { t: t, l: l + 1 };
+    else if (t + 1 < S.tubeCount) {
+      var nl = S.tubes[t + 1].indexOf(null);
+      sel = { t: t + 1, l: nl < 0 ? 0 : nl };
+    } else sel = null;
     afterEdit();
+    var act = sel && $('board').querySelector('.tw.active');
+    if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
   });
 
   $('fastBtn').addEventListener('click', function () {
@@ -753,6 +765,118 @@ if (typeof module !== 'undefined' && module.exports) {
   });
 
   /* ================================================================
+     History: every Start press is logged, with its result when known
+     ================================================================ */
+  var HIST_KEY = 'water-sort-solver-history-v1', HIST_MAX = 50;
+  var H = [], curHist = null;
+
+  function loadHistory() {
+    try {
+      var a = JSON.parse(localStorage.getItem(HIST_KEY));
+      if (!Array.isArray(a)) return [];
+      return a.filter(function (e) { return e && e.id && e.setup && e.status; }).map(function (e) {
+        if (e.status === 'solving') e.status = 'interrupted';   // page was closed mid-search
+        return e;
+      }).slice(0, HIST_MAX);
+    } catch (e) { return []; }
+  }
+  function saveHistory() {
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(H)); } catch (e) { /* storage may be blocked */ }
+  }
+  function addHistory(extra) {
+    var e = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      time: new Date().toISOString(),
+      status: 'solving',
+      extraTubes: extra,
+      // Same shape as an exported setup, so it can be imported back as-is.
+      setup: { tubeCount: S.tubeCount, cap: S.cap, palette: JSON.parse(JSON.stringify(S.palette)), tubes: JSON.parse(JSON.stringify(S.tubes)) },
+      moveCount: null, moves: null, seconds: null, statesChecked: null
+    };
+    H.unshift(e);
+    if (H.length > HIST_MAX) H.length = HIST_MAX;
+    saveHistory(); renderHistory();
+    return e.id;
+  }
+  function updateHistory(id, patch) {
+    for (var i = 0; i < H.length; i++) {
+      if (H[i].id === id) { for (var k in patch) H[i][k] = patch[k]; break; }
+    }
+    saveHistory(); renderHistory();
+  }
+  function historyMoves(moves, palette) {
+    var names = {};
+    palette.forEach(function (c) { names[c.id] = c.name; });
+    return moves.map(function (m, i) {
+      return { step: i + 1, from: m.from + 1, to: m.to + 1, layers: m.count, color: names[m.colorId] || String(m.colorId) };
+    });
+  }
+  var STATUS_TEXT = { solving: 'Solving…', solved: 'Solved', unsolvable: 'No solution', limit: 'Search too large',
+                      cancelled: 'Cancelled', interrupted: 'Interrupted', error: 'Check failed' };
+  function renderHistory() {
+    var box = $('historyList');
+    if (!H.length) { box.innerHTML = '<p class="tip">Nothing yet. Each time you press Start, the board is logged here.</p>'; }
+    else {
+      box.innerHTML = H.map(function (e) {
+        var label = STATUS_TEXT[e.status] || e.status;
+        if (e.status === 'solved') label += ' in ' + e.moveCount + ' move' + (e.moveCount === 1 ? '' : 's');
+        var extra = e.extraTubes ? ' + ' + e.extraTubes + ' extra tube' + (e.extraTubes === 1 ? '' : 's') : '';
+        return '<div class="hrow ' + esc(e.status) + '" data-id="' + esc(e.id) + '">' +
+          '<div class="hinfo"><div class="hstatus">' + esc(label) + '</div>' +
+          '<div class="hmeta">' + esc(new Date(e.time).toLocaleString()) + '<br>' + e.setup.tubeCount + ' tubes' + extra + ', ' + e.setup.cap + ' layers</div></div>' +
+          '<div class="hbtns"><button type="button" class="btn sm" data-act="load">Load</button>' +
+          '<button type="button" class="btn sm" data-act="export">Export</button>' +
+          '<button type="button" class="btn sm danger" data-act="del" aria-label="Delete entry">×</button></div></div>';
+      }).join('');
+    }
+    $('histExportAll').disabled = !H.length;
+    $('histClear').disabled = !H.length;
+  }
+  function downloadJSON(filename, obj) {
+    var json = JSON.stringify(obj, null, 1);
+    try {
+      var url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    } catch (err) { toast('Download is not available in this browser.'); }
+  }
+  function stamp(e) { return e.time.slice(0, 19).replace(/[:T]/g, '-'); }
+
+  $('historyList').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var id = b.parentNode.parentNode.getAttribute('data-id');
+    var entry = H.filter(function (x) { return x.id === id; })[0];
+    if (!entry) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'export') {
+      downloadJSON('water-sort-' + stamp(entry) + '.json', { app: 'water-sort-solver', version: 1, exportedAt: new Date().toISOString(), entry: entry });
+    } else if (act === 'del') {
+      H = H.filter(function (x) { return x.id !== id; });
+      saveHistory(); renderHistory();
+    } else if (act === 'load') {
+      if (boardHasLayers() && !confirm('Replace the current board with this entry?')) return;
+      try {
+        var o = JSON.parse(JSON.stringify(entry.setup));
+        o.colorblind = S.colorblind; o.perRow = S.perRow; o.speed = S.speed;
+        S = sanitize(o);
+        sel = null; brush = null; save(); invalidateResult(); renderSetup();
+        toast('Board loaded from history.');
+        $('board').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+      } catch (err) { toast('Could not load this entry.'); }
+    }
+  });
+  $('histExportAll').addEventListener('click', function () {
+    downloadJSON('water-sort-history.json', { app: 'water-sort-solver', version: 1, exportedAt: new Date().toISOString(), history: H });
+  });
+  $('histClear').addEventListener('click', function () {
+    if (!confirm('Delete the whole history?')) return;
+    H = []; saveHistory(); renderHistory();
+  });
+
+  /* ================================================================
      Solve flow
      ================================================================ */
   var job = null, lastExtra = 0, solving = false;
@@ -774,10 +898,11 @@ if (typeof module !== 'undefined' && module.exports) {
     var tubes = S.tubes.map(function (a) { return a.filter(function (x) { return x !== null; }); });
     for (var i = 0; i < extra; i++) tubes.push([]);
     lastExtra = extra;
+    var histId = curHist = addHistory(extra);
     setSolving(true);
     $('progress').textContent = 'Starting…';
     $('solving').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
-    var t0 = Date.now(), cap = S.cap, base = S.tubeCount;
+    var t0 = Date.now(), cap = S.cap, base = S.tubeCount, palSnapshot = JSON.parse(JSON.stringify(S.palette));
 
     job = solvePuzzle(tubes, cap, STATE_LIMIT, function (r) {
       $('progress').textContent = 'Checked ' + fmt(r.explored) + ' states. Searching ' + r.depth + ' moves deep.';
@@ -787,8 +912,13 @@ if (typeof module !== 'undefined' && module.exports) {
       if (job !== mine) return;
       job = null; setSolving(false);
       var secs = ((Date.now() - t0) / 1000).toFixed(1);
-      if (res.status === 'cancelled') return;
-      if (res.status === 'solved') return showResult(tubes, cap, res, extra, base, secs);
+      if (res.status === 'cancelled') return updateHistory(histId, { status: 'cancelled' });
+      if (res.status === 'solved') {
+        updateHistory(histId, { status: 'solved', moveCount: res.moves.length, seconds: +secs, statesChecked: res.explored,
+                                moves: historyMoves(res.moves, palSnapshot) });
+        return showResult(tubes, cap, res, extra, base, secs);
+      }
+      updateHistory(histId, { status: res.status === 'invalid' ? 'error' : res.status, statesChecked: res.explored || null });
       showProblem(res);
     });
   }
@@ -796,6 +926,7 @@ if (typeof module !== 'undefined' && module.exports) {
   $('startBtn').addEventListener('click', function () { startSolve(0); });
   $('cancelBtn').addEventListener('click', function () {
     if (job) { job.cancel(); job = null; }
+    if (curHist) updateHistory(curHist, { status: 'cancelled' });
     setSolving(false);
     toast('Search cancelled.');
   });
@@ -852,7 +983,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
     // Move list (built once, highlighted in renderPlayer)
     $('moveList').innerHTML = P.moves.map(function (m, i) {
-      return '<button type="button" class="mv" data-i="' + i + '">' + (i + 1) + '. ' + (m.from + 1) + '→' + (m.to + 1) + '</button>';
+      return '<button type="button" class="mv" data-i="' + i + '" aria-label="Step ' + (i + 1) + ': tube ' + (m.from + 1) + ' to tube ' + (m.to + 1) + '">' + (m.from + 1) + '→' + (m.to + 1) + '</button>';
     }).join('');
 
     $('result').hidden = false;
@@ -869,7 +1000,7 @@ if (typeof module !== 'undefined' && module.exports) {
   function renderPlayer(fresh) {
     if (!P) return;
     var el = $('playBoard'), done = P.s >= P.n, m = done ? null : P.moves[P.s];
-    layoutGrid(el, P.cap);
+    layoutGrid(el, P.cap, P.snaps[0].length);
     el.innerHTML = tubesHTML(P.snaps[P.s], P.cap, { from: m ? m.from : -1, to: m ? m.to : -1, fresh: fresh });
 
     if (P.n === 0) $('stepText').innerHTML = 'Nothing to do. Every tube is already sorted.';
@@ -992,7 +1123,9 @@ if (typeof module !== 'undefined' && module.exports) {
   var firstRun = false;
   S = loadSaved();
   if (!S) { S = stateFromExample(EXAMPLES[0]); firstRun = true; save(); }
+  H = loadHistory();
   renderSetup();
+  renderHistory();
   if (firstRun) toast('Level 27 is loaded as a demo. Press Start, or clear it and enter your own board.');
   if (/[?&]test\b/.test(location.search)) runSelfTest();
 })();
